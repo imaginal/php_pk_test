@@ -7,6 +7,12 @@ define('DB_NAME', 'pk_test');
 
 mysqli_report(MYSQLI_REPORT_ALL);
 $db = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+if (!$db)
+    die("Error: can't connect to database {$db->error}\n");
+
+set_error_handler(function ($severity, $msg, $file, $line) {
+    throw new ErrorException($msg, 0, $severity, $file, $line);
+});
 
 $__pk_offset = rand(1, (int)1e10);
 
@@ -14,7 +20,7 @@ function _new_pk(): int {
     global $__pk_offset;
     $__pk_offset += rand(1, (int)1e10);
     // mktime(0, 0, 0, 1, 1, 2020) = 1577836800
-    return intval((microtime(true) - 1577836800) * 1e10) + rand(1, (int)1e6) + $__pk_offset;
+    return intval((microtime(true) - 1577836800) * 1e10) + rand(1, (int)1e5) + $__pk_offset;
 }
 
 $__known_pk = array();
@@ -92,7 +98,7 @@ function test_32_create_table() {
       "PRIMARY KEY (id) ".
       ")");
     if (!$res || $db->error)
-        die("Error: test_32_create_table ${db->error}\n");
+        die("Error: test_32_create_table {$db->error}\n");
 }
 
 function test_32_insert_auto_10k() {
@@ -104,7 +110,7 @@ function test_32_insert_auto_10k() {
             $name .= " / ".$name;
         $res = $db->query("INSERT INTO test_32 (name) VALUES ('$name')");
         if (!$res || $db->error)
-            die("Error: test_32_insert_10k on $i, error ${db->error}\n");
+            die("Error: test_32_insert_10k on $i, error {$db->error}\n");
     }
 }
 
@@ -121,7 +127,7 @@ function test_32_bulk_insert_1m() {
         }
         $res = $db->query($query);
         if (!$res || $db->error)
-            die("Error: test_32_bulk_insert_1m on $bi - $i, error ${db->error}\n");
+            die("Error: test_32_bulk_insert_1m on $bi - $i, error {$db->error}\n");
     }
 }
 
@@ -136,7 +142,7 @@ function test_32_insert_manual_10k() {
         $id = $base + $i;
         $res = $db->query("INSERT INTO test_32 (id, name) VALUES ($id, '$name')");
         if (!$res || $db->error)
-            die("Error: test_32_insert_manual_10k on $i, error ${db->error}\n");
+            die("Error: test_32_insert_manual_10k on $i, error {$db->error}\n");
     }
 }
 
@@ -216,7 +222,7 @@ function test_64_create_table() {
       "PRIMARY KEY (id) ".
       ")");
     if (!$res || $db->error)
-        die("Error: test_64_create_table ${db->error}\n");
+        die("Error: test_64_create_table {$db->error}\n");
 }
 
 function test_64_bulk_insert_1m() {
@@ -234,7 +240,7 @@ function test_64_bulk_insert_1m() {
         }
         $res = $db->query($query);
         if (!$res || $db->error)
-            die("Error: test_64_bulk_insert_1m on $bi - $i, error ${db->error}\n");
+            die("Error: test_64_bulk_insert_1m on $bi - $i, error {$db->error}\n");
     }
 }
 
@@ -248,7 +254,7 @@ function test_64_insert_manual_10k() {
         $id = __new_pk();
         $res = $db->query("INSERT INTO test_64 (id, name) VALUES ($id, '$name')");
         if (!$res || $db->error)
-            die("Error: test_64_insert_manual_10k on $i, error ${db->error}\n");
+            die("Error: test_64_insert_manual_10k on $i, error {$db->error}\n");
     }
 }
 
@@ -333,7 +339,7 @@ function test_uid_create_table() {
       "PRIMARY KEY (id) ".
       ")");
     if (!$res || $db->error)
-        die("Error: test_uid_create_table ${db->error}\n");
+        die("Error: test_uid_create_table {$db->error}\n");
 }
 
 function test_uid_bulk_insert_1m() {
@@ -351,7 +357,7 @@ function test_uid_bulk_insert_1m() {
         }
         $res = $db->query($query);
         if (!$res || $db->error)
-            die("Error: test_uid_bulk_insert_1m on $bi - $i, error ${db->error}\n");
+            die("Error: test_uid_bulk_insert_1m on $bi - $i, error {$db->error}\n");
     }
 }
 
@@ -365,7 +371,7 @@ function test_uid_insert_manual_10k() {
         $id = __new_uid();
         $res = $db->query("INSERT INTO test_uid (id, name) VALUES ('$id', '$name')");
         if (!$res || $db->error)
-            die("Error: test_uid_insert_10k_manual on $i, error ${db->error}\n");
+            die("Error: test_uid_insert_10k_manual on $i, error {$db->error}\n");
     }
 }
 
