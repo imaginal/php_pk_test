@@ -1,11 +1,12 @@
 <?php declare(strict_types=1); error_reporting(-1);
 
-define('PDO_DSN', 'mysql:host=db;dbname=pk_test');
-define('PDO_USER', 'root');
-define('PDO_PASS', 'mysql');
+define('PDO_DSN', 'pgsql:host=db;dbname=pk_test');
+//define('PDO_DSN', 'mysql:host=db;dbname=pk_test');
+define('PDO_USER', 'pkuser');
+define('PDO_PASS', 'pksecret');
 
-define('INSERT_MANUAL',     (int) 10e3);
-define('INSERT_BULK',       (int)  100);
+define('INSERT_MANUAL',     (int)  10e3);
+define('INSERT_BULK',       (int)   100);
 define('SELECT_SEQUENTIAL', (int) 100e3);
 define('SELECT_RANDOM',     (int) 100e3);
 define('UPDATE_SEQUENTIAL', (int)  10e3);
@@ -94,7 +95,7 @@ function print_stat() {
 
 //////////////////// 32 ////////////////////
 
-function test_32_create_table() {
+function test_32_create_table_mysql() {
     global $db;
     $db->query("DROP TABLE IF EXISTS test_32");
     $res = $db->query("CREATE TABLE test_32 (" .
@@ -106,6 +107,28 @@ function test_32_create_table() {
         $error = $db->errorCode();
         die("Error: test_32_create_table {$error}\n");
     }
+}
+
+function test_32_create_table_pgsql() {
+    global $db;
+    $db->query("DROP TABLE IF EXISTS test_32");
+    $res = $db->query("CREATE TABLE test_32 (" .
+      "id SERIAL,".
+      "name VARCHAR(255) DEFAULT NULL, ".
+      "PRIMARY KEY (id) ".
+      ")");
+    if (!$res || $db->errorCode() != "00000") {
+        $error = $db->errorCode();
+        die("Error: test_32_create_table {$error}\n");
+    }
+}
+
+function test_32_create_table() {
+    if (substr(PDO_DSN, 0, 5) == "mysql")
+        return test_32_create_table_mysql();
+    else if (substr(PDO_DSN, 0, 5) == "pgsql")
+        return test_32_create_table_pgsql();
+    die("Error: Unknown server type\n");
 }
 
 function test_32_insert_auto() {
@@ -211,7 +234,7 @@ function test_32_delete_random() {
         $res = $db->query("DELETE FROM test_32 WHERE id=$id");
         if (!$res || $res->rowCount() == 0)
             $errors += 1;
-        if ($errors > 100)
+        if ($errors > DELETE_RANDOM/10)
             die("Error: test_32_delete_random $errors no affected_rows on $id\n");
     }
 }
@@ -228,7 +251,7 @@ function test_32_delete_sequential() {
 
 //////////////////// 64 ////////////////////
 
-function test_64_create_table() {
+function test_64_create_table_mysql() {
     global $db, $__known_pk;
     $__known_pk = array();
     $db->query("DROP TABLE IF EXISTS test_64");
@@ -241,6 +264,29 @@ function test_64_create_table() {
         $error = $db->errorCode();
         die("Error: test_64_create_table {$error}\n");
     }
+}
+
+function test_64_create_table_pgsql() {
+    global $db, $__known_pk;
+    $__known_pk = array();
+    $db->query("DROP TABLE IF EXISTS test_64");
+    $res = $db->query("CREATE TABLE test_64 (" .
+      "id INT8 NOT NULL, ".
+      "name VARCHAR(255) DEFAULT NULL, ".
+      "PRIMARY KEY (id) ".
+      ")");
+    if (!$res || $db->errorCode() != "00000") {
+        $error = $db->errorCode();
+        die("Error: test_64_create_table {$error}\n");
+    }
+}
+
+function test_64_create_table() {
+    if (substr(PDO_DSN, 0, 5) == "mysql")
+        return test_64_create_table_mysql();
+    else if (substr(PDO_DSN, 0, 5) == "pgsql")
+        return test_64_create_table_pgsql();
+    die("Error: Unknown server type\n");
 }
 
 function test_64_bulk_insert() {
@@ -336,7 +382,7 @@ function test_64_delete_random() {
         $res = $db->query("DELETE FROM test_64 WHERE id=$id");
         if (!$res || $res->rowCount() == 0)
             $errors += 1;
-        if ($errors > 100)
+        if ($errors > DELETE_RANDOM/10)
             die("Error: test_64_delete_random $errors no affected_rows on $id\n");
     }
 }
@@ -354,7 +400,7 @@ function test_64_delete_sequential() {
 
 //////////////////// UID ////////////////////
 
-function test_uid_create_table() {
+function test_uid_create_table_mysql() {
     global $db, $__known_uid;
     $__known_uid = array();
     $db->query("DROP TABLE IF EXISTS test_uid");
@@ -367,6 +413,10 @@ function test_uid_create_table() {
         $error = $db->errorCode();
         die("Error: test_uid_create_table {$error}\n");
     }
+}
+
+function test_uid_create_table() {
+    return test_uid_create_table_mysql();
 }
 
 function test_uid_bulk_insert() {
@@ -462,7 +512,7 @@ function test_uid_delete_random() {
         $res = $db->query("DELETE FROM test_uid WHERE id='$id'");
         if (!$res || $res->rowCount() == 0)
             $errors += 1;
-        if ($errors > 100)
+        if ($errors > DELETE_RANDOM/10)
             die("Error: test_uid_delete_random $errors no affected_rows on $id\n");
     }
 }
@@ -480,14 +530,7 @@ function test_uid_delete_sequential() {
 
 //////////////////// RUN ////////////////////
 
-function run_suite() {
-    global $db;
-
-    echo("Connect to ...........: ".PDO_DSN."\n\n");
-
-    $db = new PDO(PDO_DSN, PDO_USER, PDO_PASS);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
+function print_settings() {
     echo("INSERT_MANUAL ........: ".INSERT_MANUAL."\n");
     echo("INSERT_BULK ..........: ".INSERT_BULK." x ".INSERT_MANUAL."\n");
     echo("SELECT_SEQUENTIAL ....: ".SELECT_SEQUENTIAL."\n");
@@ -496,7 +539,9 @@ function run_suite() {
     echo("UPDATE_RANDOM ........: ".UPDATE_RANDOM."\n");
     echo("DELETE_SEQUENTIAL ....: ".DELETE_SEQUENTIAL."\n");
     echo("DELETE_RANDOM ........: ".DELETE_RANDOM."\n\n");
+}
 
+function run_suite() {
     echo("=== 32 ===\n");
     run_test('test_32_create_table');
     run_test('test_32_insert_auto');
@@ -535,9 +580,17 @@ function run_suite() {
 }
 
 function main() {
-    global $argc, $argv;
+    global $db, $argc, $argv;
 
     $repeat = $argc > 1 ? intval($argv[1]) : 1;
+
+    echo("Repeat ...............: $repeat time/s\n");
+    echo("Connect to ...........: ".PDO_DSN."\n\n");
+
+    $db = new PDO(PDO_DSN, PDO_USER, PDO_PASS);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    print_settings();
 
     for ($n = 0; $n < $repeat; $n++)
         run_suite();
