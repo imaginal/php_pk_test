@@ -1,20 +1,25 @@
 <?php declare(strict_types=1); error_reporting(-1);
 
-define('DB_HOST', 'db');
-define('DB_USER', 'root');
-define('DB_PASS', 'mysql');
-define('DB_NAME', 'pk_test');
+define('PDO_DSN', 'mysql:host=db;dbname=pk_test');
+define('PDO_USER', 'root');
+define('PDO_PASS', 'mysql');
 
-mysqli_report(MYSQLI_REPORT_ALL);
-$db = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-if (!$db)
-    die("Error: can't connect to database {$db->error}\n");
+define('INSERT_MANUAL',     (int) 10e3);
+define('INSERT_BULK',       (int)  100);
+define('SELECT_SEQUENTIAL', (int) 100e3);
+define('SELECT_RANDOM',     (int) 100e3);
+define('UPDATE_SEQUENTIAL', (int)  10e3);
+define('UPDATE_RANDOM',     (int)  10e3);
+define('DELETE_SEQUENTIAL', (int)  10e3);
+define('DELETE_RANDOM',     (int)  10e3);
+
+$db = NULL;
 
 set_error_handler(function ($severity, $msg, $file, $line) {
     throw new ErrorException($msg, 0, $severity, $file, $line);
 });
 
-$__pk_offset = rand(1, (int)1e10);
+$__pk_offset = 0;
 
 function _new_pk(): int {
     global $__pk_offset;
@@ -97,116 +102,127 @@ function test_32_create_table() {
       "name VARCHAR(255) DEFAULT NULL, ".
       "PRIMARY KEY (id) ".
       ")");
-    if (!$res || $db->error)
-        die("Error: test_32_create_table {$db->error}\n");
+    if (!$res || $db->errorCode() != "00000") {
+        $error = $db->errorCode();
+        die("Error: test_32_create_table {$error}\n");
+    }
 }
 
-function test_32_insert_auto_10k() {
+function test_32_insert_auto() {
     global $db;
     $name = '';
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < INSERT_MANUAL; $i++) {
         $name = "$i - ".sha1($name);
         while (strlen($name) < 120)
             $name .= " / ".$name;
         $res = $db->query("INSERT INTO test_32 (name) VALUES ('$name')");
-        if (!$res || $db->error)
-            die("Error: test_32_insert_10k on $i, error {$db->error}\n");
+        if (!$res || $db->errorCode() != "00000") {
+            $error = $db->errorCode();
+            die("Error: test_32_insert_auto on $i, error {$error}\n");
+        }
     }
 }
 
-function test_32_bulk_insert_1m() {
+function test_32_bulk_insert() {
     global $db;
     $name = '';
-    for ($bi = 0; $bi < 1000; $bi++) {
+    for ($bi = 0; $bi < INSERT_BULK; $bi++) {
         $query = "INSERT INTO test_32 (name) VALUES (NULL)";
-        for ($i = 1; $i < 1000; $i++) {
+        for ($i = 1; $i < INSERT_MANUAL; $i++) {
             $name = "$bi - $i - ".sha1($name);
             while (strlen($name) < 120)
                 $name .= " / ".$name;
             $query .= ",('$name')";
         }
         $res = $db->query($query);
-        if (!$res || $db->error)
-            die("Error: test_32_bulk_insert_1m on $bi - $i, error {$db->error}\n");
+        if (!$res || $db->errorCode() != "00000") {
+            $error = $db->errorCode();
+            die("Error: test_32_bulk_insert on $bi - $i, error {$error}\n");
+        }
     }
 }
 
-function test_32_insert_manual_10k() {
+function test_32_insert_manual() {
     global $db;
     $base = intval(2e6);
     $name = '';
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < INSERT_MANUAL; $i++) {
         $name = "$base - $i - ".sha1($name);
         while (strlen($name) < 120)
             $name .= " / ".$name;
         $id = $base + $i;
         $res = $db->query("INSERT INTO test_32 (id, name) VALUES ($id, '$name')");
-        if (!$res || $db->error)
-            die("Error: test_32_insert_manual_10k on $i, error {$db->error}\n");
+        if (!$res || $db->errorCode() != "00000") {
+            $error = $db->errorCode();
+            die("Error: test_32_insert_manual on $i, error {$error}\n");
+        }
     }
 }
 
-function test_32_select_random_100k() {
+function test_32_select_random() {
     global $db;
-    for ($i = 0; $i < 100e3; $i++) {
-        $id = rand(1, (int)1e6);
+    for ($i = 0; $i < SELECT_RANDOM; $i++) {
+        $id = rand(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $res = $db->query("SELECT id, name FROM test_32 WHERE id=$id");
-        $row = $res->fetch_all(MYSQLI_ASSOC);
-        if (!$res || empty($row))
-            die("Error: test_32_select_random_100k emprty result on $id\n");
+        $row = $res->fetch();
+        if (!$res || !$row)
+            die("Error: test_32_select_random emprty result on $id\n");
     }
 }
 
-function test_32_select_sequential_100k() {
+function test_32_select_sequential() {
     global $db;
-    for ($i = 0; $i < 100e3; $i++) {
-        $id = $i + 100000;
+    for ($i = 0; $i < SELECT_SEQUENTIAL; $i++) {
+        $id = $i + INSERT_MANUAL;
         $res = $db->query("SELECT id, name FROM test_32 WHERE id=$id");
-        $row = $res->fetch_all(MYSQLI_ASSOC);
-        if (!$res || empty($row))
-            die("Error: test_32_select_sequential_100k emprty result on $id\n");
+        $row = $res->fetch();
+        if (!$res || !$row)
+            die("Error: test_32_select_sequential emprty result on $id\n");
     }
 }
 
-function test_32_update_random_10k() {
+function test_32_update_random() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = rand(1, (int)1e6);
+    for ($i = 0; $i < UPDATE_RANDOM; $i++) {
+        $id = rand(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $name = "$i updated $i updated $i random ".rand();
         $res = $db->query("UPDATE test_32 SET name='$name' WHERE id=$id");
-        if (!$res || $db->affected_rows == 0)
-            die("Error: test_32_update_random_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_32_update_random no affected_rows on $id\n");
     }
 }
 
-function test_32_update_sequential_10k() {
+function test_32_update_sequential() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = $i + 200000;
+    for ($i = 0; $i < UPDATE_SEQUENTIAL; $i++) {
+        $id = $i + 2 * INSERT_MANUAL;
         $name = "$i updated $i updated $i random ".rand();
         $res = $db->query("UPDATE test_32 SET name='$name' WHERE id=$id");
-        if (!$res || $db->affected_rows == 0)
-            die("Error: test_32_update_sequential_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_32_update_sequential no affected_rows on $id\n");
     }
 }
 
-function test_32_delete_random_10k() {
+function test_32_delete_random() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = rand(1, (int)1e6);
+    $errors = 0;
+    for ($i = 0; $i < DELETE_RANDOM; $i++) {
+        $id = rand(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $res = $db->query("DELETE FROM test_32 WHERE id=$id");
-        // if (!$res || $db->affected_rows == 0)
-        //    echo("Error: test_32_delete_random_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            $errors += 1;
+        if ($errors > 100)
+            die("Error: test_32_delete_random $errors no affected_rows on $id\n");
     }
 }
 
-function test_32_delete_sequential_10k() {
+function test_32_delete_sequential() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = $i + 300000;
+    for ($i = 0; $i < DELETE_SEQUENTIAL; $i++) {
+        $id = $i + 3 * INSERT_MANUAL;
         $res = $db->query("DELETE FROM test_32 WHERE id=$id");
-        if (!$res || $db->affected_rows == 0)
-            echo("Error: test_32_delete_sequential_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_32_delete_sequential no affected_rows on $id\n");
     }
 }
 
@@ -221,17 +237,19 @@ function test_64_create_table() {
       "name VARCHAR(255) DEFAULT NULL, ".
       "PRIMARY KEY (id) ".
       ")");
-    if (!$res || $db->error)
-        die("Error: test_64_create_table {$db->error}\n");
+    if (!$res || $db->errorCode() != "00000") {
+        $error = $db->errorCode();
+        die("Error: test_64_create_table {$error}\n");
+    }
 }
 
-function test_64_bulk_insert_1m() {
+function test_64_bulk_insert() {
     global $db;
     $name = '';
-    for ($bi = 0; $bi < 1000; $bi++) {
+    for ($bi = 0; $bi < INSERT_BULK; $bi++) {
         $id = __new_pk();
         $query = "INSERT INTO test_64 (id, name) VALUES ($id, NULL)";
-        for ($i = 1; $i < 1000; $i++) {
+        for ($i = 1; $i < INSERT_MANUAL; $i++) {
             $name = "$bi - $i - ".sha1($name);
             while (strlen($name) < 120)
                 $name .= " / ".$name;
@@ -239,91 +257,98 @@ function test_64_bulk_insert_1m() {
             $query .= ",($id, '$name')";
         }
         $res = $db->query($query);
-        if (!$res || $db->error)
-            die("Error: test_64_bulk_insert_1m on $bi - $i, error {$db->error}\n");
+        if (!$res || $db->errorCode() != "00000") {
+            $error = $db->errorCode();
+            die("Error: test_64_bulk_insert on $bi - $i, error {$error}\n");
+        }
     }
 }
 
-function test_64_insert_manual_10k() {
+function test_64_insert_manual() {
     global $db;
     $name = '';
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < INSERT_MANUAL; $i++) {
         $name = "$i - ".sha1($name);
         while (strlen($name) < 120)
             $name .= " / ".$name;
         $id = __new_pk();
         $res = $db->query("INSERT INTO test_64 (id, name) VALUES ($id, '$name')");
-        if (!$res || $db->error)
-            die("Error: test_64_insert_manual_10k on $i, error {$db->error}\n");
+        if (!$res || $db->errorCode() != "00000") {
+            $error = $db->errorCode();
+            die("Error: test_64_insert_manual on $i, error {$error}\n");
+        }
     }
 }
 
-function test_64_select_random_100k() {
+function test_64_select_random() {
     global $db;
-    for ($i = 0; $i < 100e3; $i++) {
-        $id = rand_pk(1, (int)1e6);
+    for ($i = 0; $i < SELECT_RANDOM; $i++) {
+        $id = rand_pk(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $res = $db->query("SELECT id, name FROM test_64 WHERE id=$id");
-        $row = $res->fetch_all(MYSQLI_ASSOC);
-        if (!$res || empty($row))
-            die("Error: test_64_select_random_100k emprty result on $id\n");
+        $row = $res->fetch();
+        if (!$res || !$row)
+            die("Error: test_64_select_random emprty result on $id\n");
     }
 }
 
-function test_64_select_sequential_100k() {
+function test_64_select_sequential() {
     global $db;
     global $__known_pk;
     sort($__known_pk);
-    for ($i = 0; $i < 100e3; $i++) {
+    for ($i = 0; $i < SELECT_SEQUENTIAL; $i++) {
         $id = $__known_pk[$i];
         $res = $db->query("SELECT id, name FROM test_64 WHERE id=$id");
-        $row = $res->fetch_all(MYSQLI_ASSOC);
-        if (!$res || empty($row))
-            die("Error: test_64_select_sequential_100k emprty result on $id\n");
+        $row = $res->fetch();
+        if (!$res || !$row)
+            die("Error: test_64_select_sequential emprty result on $id\n");
     }
 }
 
-function test_64_update_random_10k() {
+function test_64_update_random() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = rand_pk(1, (int)1e6);
+    for ($i = 0; $i < UPDATE_RANDOM; $i++) {
+        $id = rand_pk(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $name = "$i updated $i updated $i random ".rand();
         $res = $db->query("UPDATE test_64 SET name='$name' WHERE id=$id");
-        if (!$res || $db->affected_rows == 0)
-            die("Error: test_64_update_random_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_64_update_random no affected_rows on $id\n");
     }
 }
 
-function test_64_update_sequential_10k() {
+function test_64_update_sequential() {
     global $db;
     global $__known_pk;
     sort($__known_pk);
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < UPDATE_SEQUENTIAL; $i++) {
         $id = $__known_pk[$i];
         $name = "$i updated $i updated $i random ".rand();
         $res = $db->query("UPDATE test_64 SET name='$name' WHERE id=$id");
-        if (!$res || $db->affected_rows == 0)
-            die("Error: test_64_update_sequential_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_64_update_sequential no affected_rows on $id\n");
     }
 }
 
-function test_64_delete_random_10k() {
+function test_64_delete_random() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = rand_pk(1, (int)1e6);
+    $errors = 0;
+    for ($i = 0; $i < DELETE_RANDOM; $i++) {
+        $id = rand_pk(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $res = $db->query("DELETE FROM test_64 WHERE id=$id");
-        // if (!$res || $db->affected_rows == 0)
-        //    echo("Error: test_64_delete_random_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            $errors += 1;
+        if ($errors > 100)
+            die("Error: test_64_delete_random $errors no affected_rows on $id\n");
     }
 }
 
-function test_64_delete_sequential_10k() {
+function test_64_delete_sequential() {
     global $db;
     global $__known_pk;
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < DELETE_SEQUENTIAL; $i++) {
         $id = $__known_pk[$i];
         $res = $db->query("DELETE FROM test_64 WHERE id=$id");
-        if (!$res || $db->affected_rows == 0)
-            echo("Error: test_64_delete_sequential_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_64_delete_sequential no affected_rows on $id\n");
     }
 }
 
@@ -338,17 +363,19 @@ function test_uid_create_table() {
       "name VARCHAR(255) DEFAULT NULL, ".
       "PRIMARY KEY (id) ".
       ")");
-    if (!$res || $db->error)
-        die("Error: test_uid_create_table {$db->error}\n");
+    if (!$res || $db->errorCode() != "00000") {
+        $error = $db->errorCode();
+        die("Error: test_uid_create_table {$error}\n");
+    }
 }
 
-function test_uid_bulk_insert_1m() {
+function test_uid_bulk_insert() {
     global $db;
     $name = '';
-    for ($bi = 0; $bi < 1000; $bi++) {
+    for ($bi = 0; $bi < INSERT_BULK; $bi++) {
         $id = __new_uid();
         $query = "INSERT INTO test_uid (id, name) VALUES ('$id', NULL)";
-        for ($i = 1; $i < 1000; $i++) {
+        for ($i = 1; $i < INSERT_MANUAL; $i++) {
             $name = "$bi - $i - ".sha1($name);
             while (strlen($name) < 120)
                 $name .= " ".$name;
@@ -356,133 +383,155 @@ function test_uid_bulk_insert_1m() {
             $query .= ",('$id', '$name')";
         }
         $res = $db->query($query);
-        if (!$res || $db->error)
-            die("Error: test_uid_bulk_insert_1m on $bi - $i, error {$db->error}\n");
+        if (!$res || $db->errorCode() != "00000") {
+            $error = $db->errorCode();
+            die("Error: test_uid_bulk_insert on $bi - $i, error {$error}\n");
+        }
     }
 }
 
-function test_uid_insert_manual_10k() {
+function test_uid_insert_manual() {
     global $db;
     $name = '';
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < INSERT_MANUAL; $i++) {
         $name = "$i - ".sha1($name);
         while (strlen($name) < 120)
             $name .= " / ".$name;
         $id = __new_uid();
         $res = $db->query("INSERT INTO test_uid (id, name) VALUES ('$id', '$name')");
-        if (!$res || $db->error)
-            die("Error: test_uid_insert_10k_manual on $i, error {$db->error}\n");
+        if (!$res || $db->errorCode() != "00000") {
+            $error = $db->errorCode();
+            die("Error: test_uid_insert_manual on $i, error {$error}\n");
+        }
     }
 }
 
-function test_uid_select_random_100k() {
+function test_uid_select_random() {
     global $db;
-    for ($i = 0; $i < 100e3; $i++) {
-        $id = rand_uid(1, (int)1e6);
+    for ($i = 0; $i < SELECT_RANDOM; $i++) {
+        $id = rand_uid(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $res = $db->query("SELECT id, name FROM test_uid WHERE id='$id'");
-        $row = $res->fetch_all(MYSQLI_ASSOC);
-        if (!$res || empty($row))
-            die("Error: test_uid_select_random_100k emprty result on $id\n");
+        $row = $res->fetch();
+        if (!$res || !$row)
+            die("Error: test_uid_select_random emprty result on $id\n");
     }
 }
 
-function test_uid_select_sequential_100k() {
+function test_uid_select_sequential() {
     global $db;
     global $__known_uid;
     sort($__known_uid);
-    for ($i = 0; $i < 100e3; $i++) {
+    for ($i = 0; $i < SELECT_SEQUENTIAL; $i++) {
         $id = $__known_uid[$i];
         $res = $db->query("SELECT id, name FROM test_uid WHERE id='$id'");
-        $row = $res->fetch_all(MYSQLI_ASSOC);
-        if (!$res || empty($row))
-            die("Error: test_uid_select_sequential_100k emprty result on $id\n");
+        $row = $res->fetch();
+        if (!$res || !$row)
+            die("Error: test_uid_select_sequential emprty result on $id\n");
     }
 }
 
-function test_uid_update_random_10k() {
+function test_uid_update_random() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = rand_uid(1, (int)1e6);
+    for ($i = 0; $i < UPDATE_RANDOM; $i++) {
+        $id = rand_uid(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $name = "$i updated $i updated $i random ".rand();
         $res = $db->query("UPDATE test_uid SET name='$name' WHERE id='$id'");
-        if (!$res || $db->affected_rows == 0)
-            die("Error: test_uid_update_random_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_uid_update_random no affected_rows on $id\n");
     }
 }
 
-function test_uid_update_sequential_10k() {
+function test_uid_update_sequential() {
     global $db;
     global $__known_uid;
     sort($__known_uid);
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < UPDATE_SEQUENTIAL; $i++) {
         $id = $__known_uid[$i];
         $name = "$i updated $i updated $i random ".rand();
         $res = $db->query("UPDATE test_uid SET name='$name' WHERE id='$id'");
-        if (!$res || $db->affected_rows == 0)
-            die("Error: test_uid_update_sequential_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_uid_update_sequential no affected_rows on $id\n");
     }
 }
 
-function test_uid_delete_random_10k() {
+function test_uid_delete_random() {
     global $db;
-    for ($i = 0; $i < 10e3; $i++) {
-        $id = rand_uid(1, (int)1e6);
+    $errors = 0;
+    for ($i = 0; $i < DELETE_RANDOM; $i++) {
+        $id = rand_uid(1, intval(INSERT_MANUAL*(INSERT_BULK+1)));
         $res = $db->query("DELETE FROM test_uid WHERE id='$id'");
-        // if (!$res || $db->affected_rows == 0)
-        //    echo("Error: test_uid_delete_random_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            $errors += 1;
+        if ($errors > 100)
+            die("Error: test_uid_delete_random $errors no affected_rows on $id\n");
     }
 }
 
-function test_uid_delete_sequential_10k() {
+function test_uid_delete_sequential() {
     global $db;
     global $__known_uid;
-    for ($i = 0; $i < 10e3; $i++) {
+    for ($i = 0; $i < DELETE_SEQUENTIAL; $i++) {
         $id = $__known_uid[$i];
         $res = $db->query("DELETE FROM test_uid WHERE id='$id'");
-        if (!$res || $db->affected_rows == 0)
-            echo("Error: test_uid_delete_sequential_10k no affected_rows on $id\n");
+        if (!$res || $res->rowCount() == 0)
+            die("Error: test_uid_delete_sequential no affected_rows on $id\n");
     }
 }
 
 //////////////////// RUN ////////////////////
 
 function run_suite() {
+    global $db;
+
+    echo("Connect to ...........: ".PDO_DSN."\n\n");
+
+    $db = new PDO(PDO_DSN, PDO_USER, PDO_PASS);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    echo("INSERT_MANUAL ........: ".INSERT_MANUAL."\n");
+    echo("INSERT_BULK ..........: ".INSERT_BULK." x ".INSERT_MANUAL."\n");
+    echo("SELECT_SEQUENTIAL ....: ".SELECT_SEQUENTIAL."\n");
+    echo("SELECT_RANDOM ........: ".SELECT_RANDOM."\n");
+    echo("UPDATE_SEQUENTIAL ....: ".UPDATE_SEQUENTIAL."\n");
+    echo("UPDATE_RANDOM ........: ".UPDATE_RANDOM."\n");
+    echo("DELETE_SEQUENTIAL ....: ".DELETE_SEQUENTIAL."\n");
+    echo("DELETE_RANDOM ........: ".DELETE_RANDOM."\n\n");
 
     echo("=== 32 ===\n");
     run_test('test_32_create_table');
-    run_test('test_32_insert_auto_10k');
-    run_test('test_32_bulk_insert_1m');
-    run_test('test_32_insert_manual_10k');
-    run_test('test_32_select_sequential_100k');
-    run_test('test_32_update_sequential_10k');
-    run_test('test_32_select_random_100k');
-    run_test('test_32_update_random_10k');
-    run_test('test_32_delete_sequential_10k');
-    run_test('test_32_delete_random_10k');
+    run_test('test_32_insert_auto');
+    run_test('test_32_bulk_insert');
+    run_test('test_32_insert_manual');
+    run_test('test_32_select_sequential');
+    run_test('test_32_update_sequential');
+    run_test('test_32_select_random');
+    run_test('test_32_update_random');
+    run_test('test_32_delete_sequential');
+    run_test('test_32_delete_random');
 
     echo("=== 64 ===\n");
     run_test('test_64_create_table');
-    run_test('test_64_insert_manual_10k');
-    run_test('test_64_bulk_insert_1m');
-    run_test('test_64_insert_manual_10k');
-    run_test('test_64_select_sequential_100k');
-    run_test('test_64_update_sequential_10k');
-    run_test('test_64_select_random_100k');
-    run_test('test_64_update_random_10k');
-    run_test('test_64_delete_sequential_10k');
-    run_test('test_64_delete_random_10k');
+    run_test('test_64_insert_manual');
+    run_test('test_64_bulk_insert');
+    run_test('test_64_insert_manual');
+    run_test('test_64_select_sequential');
+    run_test('test_64_update_sequential');
+    run_test('test_64_select_random');
+    run_test('test_64_update_random');
+    run_test('test_64_delete_sequential');
+    run_test('test_64_delete_random');
 
     echo("=== UID ===\n");
     run_test('test_uid_create_table');
-    run_test('test_uid_insert_manual_10k');
-    run_test('test_uid_bulk_insert_1m');
-    run_test('test_uid_insert_manual_10k');
-    run_test('test_uid_select_sequential_100k');
-    run_test('test_uid_update_sequential_10k');
-    run_test('test_uid_select_random_100k');
-    run_test('test_uid_update_random_10k');
-    run_test('test_uid_delete_sequential_10k');
-    run_test('test_uid_delete_random_10k');
+    run_test('test_uid_insert_manual');
+    run_test('test_uid_bulk_insert');
+    run_test('test_uid_insert_manual');
+    run_test('test_uid_select_sequential');
+    run_test('test_uid_update_sequential');
+    run_test('test_uid_select_random');
+    run_test('test_uid_update_random');
+    run_test('test_uid_delete_sequential');
+    run_test('test_uid_delete_random');
 }
 
 function main() {
